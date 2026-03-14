@@ -5,39 +5,34 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>GreenShare - Trao Tặng Tử Tế</title>
     
-    <!-- 1. Thư viện giao diện & Font -->
+    <!-- Thư viện vận hành trực tiếp -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
-    
-    <!-- 2. React & Babel (Biên dịch code ngay tại máy người dùng) -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    
-    <!-- 3. Firebase (Bản Compat để chạy trực tiếp không cần Build) -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <!-- Firebase Compat (Dành cho chạy trực tiếp trên HTML) -->
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
-    
+
     <style>
-        body { font-family: 'Plus Jakarta Sans', sans-serif; -webkit-tap-highlight-color: transparent; }
-        .animate-in { animation: slideUp 0.5s ease-out forwards; }
-        @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        body { font-family: 'Plus Jakarta Sans', sans-serif; -webkit-tap-highlight-color: transparent; background-color: #ffffff; }
         .no-scrollbar::-webkit-scrollbar { display: none; }
+        @keyframes slideUp { from { transform: translateY(30px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        .animate-in { animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+        .shadow-green { box-shadow: 0 10px 25px -5px rgba(16, 185, 129, 0.2); }
     </style>
 </head>
-<body class="bg-slate-50">
-    <div id="root">
-        <!-- Thông báo nếu app chưa tải xong -->
-        <div class="flex items-center justify-center min-h-screen text-emerald-600 font-bold">
-            Đang khởi động GreenShare...
-        </div>
-    </div>
+<body>
+    <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect } = React;
+        const { useState, useEffect, useMemo, useRef } = React;
 
-        // --- FIREBASE CONFIG (CỦA RIÊNG BẠN) ---
+        // --- CẤU HÌNH FIREBASE (CHÍNH CHỦ CỦA BẠN) ---
         const firebaseConfig = {
             apiKey: "AIzaSyCKazmR3gsDpEc0z9ggeXAbhldLKX4V_Y8",
             authDomain: "greenshare-app-5223a.firebaseapp.com",
@@ -47,94 +42,237 @@
             appId: "1:695364858101:web:2d8aaee858b9fef79c614b"
         };
 
-        // Khởi tạo
         firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
         const auth = firebase.auth();
 
+        // --- HELPERS ---
+        const Icon = ({ name, size = 20, className = "" }) => {
+            useEffect(() => { lucide.createIcons(); }, []);
+            return <i data-lucide={name} style={{ width: size, height: size }} className={className}></i>;
+        };
+
+        const Badge = ({ children, variant = "emerald" }) => {
+            const s = { 
+                emerald: "bg-emerald-100 text-emerald-700", 
+                blue: "bg-blue-100 text-blue-700",
+                rose: "bg-rose-100 text-rose-700" 
+            };
+            return <span className={`px-2 py-0.5 rounded-lg text-[9px] font-black uppercase border border-white/50 ${s[variant]}`}>{children}</span>;
+        };
+
+        // --- APP CHÍNH ---
         function App() {
-            const [view, setView] = useState('explore');
+            const [view, setView] = useState('explore'); 
             const [user, setUser] = useState(null);
             const [profile, setProfile] = useState(null);
             const [listings, setListings] = useState([]);
             const [selectedItem, setSelectedItem] = useState(null);
+            const [activeTab, setActiveTab] = useState('new');
+            const [isSubmitting, setIsSubmitting] = useState(false);
+            const fileRef = useRef();
+
+            // Forms
+            const [regForm, setRegForm] = useState({ name: '', phone: '', address: '', agreed: false });
+            const [createForm, setCreateForm] = useState({ title: '', desc: '', location: '', logistics: 'receiver_pickup', shipPolicy: 'receiver_pays', image: null });
+            const [applyForm, setApplyForm] = useState({ message: '', address: '' });
 
             useEffect(() => {
                 auth.signInAnonymously();
-                auth.onAuthStateChanged((u) => {
+                auth.onAuthStateChanged(u => {
                     setUser(u);
                     if (u) {
-                        db.collection('users').doc(u.uid).onSnapshot(sn => {
-                            if (sn.exists) setProfile(sn.data());
-                        });
+                        db.collection('users').doc(u.uid).onSnapshot(sn => { if (sn.exists) setProfile(sn.data()); });
                     }
                 });
-                db.collection('listings').limit(20).onSnapshot(s => {
+                db.collection('listings').orderBy('createdAt', 'desc').limit(50).onSnapshot(s => {
                     setListings(s.docs.map(d => ({ id: d.id, ...d.data() })));
                 });
             }, []);
 
-            const renderExplore = () => (
-                <div className="p-5 animate-in">
-                    <div className="grid grid-cols-2 gap-4">
-                        {listings.map(item => (
-                            <div key={item.id} onClick={() => { setSelectedItem(item); setView('details'); }} className="bg-white rounded-3xl overflow-hidden shadow-sm border border-emerald-50 active:scale-95 transition">
-                                <img src={item.image || "https://placehold.co/400x400/10b981/ffffff?text=Qua+Tang"} className="w-full aspect-square object-cover" />
-                                <div className="p-3">
-                                    <h3 className="font-bold text-sm text-slate-800 line-clamp-1">{item.title}</h3>
-                                    <p className="text-[10px] text-slate-400 font-bold mt-1 uppercase">📍 {item.location}</p>
-                                </div>
-                            </div>
-                        ))}
-                        {listings.length === 0 && <p className="col-span-2 text-center py-20 text-slate-400">Đang tìm quà tặng xung quanh bạn...</p>}
-                    </div>
-                </div>
-            );
+            // Xử lý đăng ký
+            const handleRegister = async (e) => {
+                e.preventDefault();
+                setIsSubmitting(true);
+                await db.collection('users').doc(user.uid).set({ ...regForm, heart: 0, leaf: 0, createdAt: Date.now() });
+                setIsSubmitting(false); setView('explore');
+            };
+
+            // Xử lý đăng quà
+            const handleCreateListing = async (e) => {
+                e.preventDefault();
+                setIsSubmitting(true);
+                await db.collection('listings').add({
+                    ...createForm,
+                    ownerId: user.uid, ownerName: profile.name,
+                    createdAt: Date.now(), status: 'available', requestCount: 0,
+                    eventDate: "2026-03-20", pickupTime: "08:00 - 10:00"
+                });
+                // Tặng điểm cho người tặng
+                await db.collection('users').doc(user.uid).update({ heart: (profile.heart || 0) + 10 });
+                setIsSubmitting(false); setView('success');
+            };
+
+            const filtered = listings.filter(l => {
+                if (activeTab === 'done') return l.status === 'completed';
+                return l.status !== 'completed';
+            });
 
             return (
-                <div className="max-w-md mx-auto min-h-screen bg-white pb-24 shadow-2xl relative">
+                <div className="max-w-md mx-auto min-h-screen bg-white flex flex-col relative shadow-2xl">
+                    {/* Header */}
                     <header className="p-5 border-b flex justify-between items-center sticky top-0 bg-white/90 backdrop-blur z-50">
-                        <div className="flex items-center gap-2">
-                            <div className="w-10 h-10 bg-emerald-600 rounded-xl flex items-center justify-center text-white font-black text-xl italic shadow-lg">G</div>
+                        <div className="flex items-center gap-2" onClick={() => setView('explore')}>
+                            <div className="w-10 h-10 bg-emerald-600 rounded-2xl flex items-center justify-center text-white font-black text-xl italic shadow-lg">G</div>
                             <h1 className="text-xl font-black text-emerald-900 tracking-tight">GreenShare</h1>
                         </div>
                         <button onClick={() => setView('profile')} className="w-10 h-10 bg-emerald-50 rounded-full flex items-center justify-center text-emerald-600 border border-emerald-100">
-                           {profile ? profile.heart + "❤️" : "👤"}
+                            {profile ? <span className="text-[10px] font-black">{profile.heart}❤️</span> : <Icon name="user" size={18}/>}
                         </button>
                     </header>
 
-                    {view === 'explore' && renderExplore()}
-                    
-                    {view === 'details' && selectedItem && (
-                        <div className="animate-in">
-                            <img src={selectedItem.image} className="w-full h-64 object-cover" />
-                            <div className="p-8 -mt-10 bg-white rounded-t-[48px] shadow-2xl space-y-6">
-                                <button onClick={() => setView('explore')} className="text-emerald-600 font-bold mb-2 flex items-center gap-1">← Quay lại</button>
-                                <h1 className="text-2xl font-black text-slate-800">{selectedItem.title}</h1>
-                                <div className="p-6 bg-slate-50 rounded-[32px] space-y-4 text-sm font-bold text-slate-600">
-                                    <p>📍 Nơi nhận: {selectedItem.location}</p>
-                                    <p>⏰ Thời gian: {selectedItem.pickupTime}</p>
-                                </div>
-                                <p className="italic text-slate-500">"{selectedItem.description}"</p>
-                                <button onClick={() => alert("Chức năng đang chờ kích hoạt bản chính thức!")} className="w-full py-5 bg-emerald-600 text-white rounded-2xl font-black shadow-xl">ĐĂNG KÝ NHẬN QUÀ</button>
+                    {/* Màn hình Khám phá */}
+                    {view === 'explore' && (
+                        <div className="p-5 pb-32 animate-in flex-1">
+                            <div className="flex gap-2 overflow-x-auto no-scrollbar mb-6">
+                                {['new', 'done'].map(t => (
+                                    <button key={t} onClick={() => setActiveTab(t)} className={`px-5 py-2.5 rounded-full text-[11px] font-black transition-all ${activeTab === t ? 'bg-emerald-600 text-white shadow-lg' : 'bg-slate-100 text-slate-400'}`}>
+                                        {t === 'new' ? '🎁 Quà mới' : '✅ Đã trao'}
+                                    </button>
+                                ))}
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                {filtered.map(item => (
+                                    <div key={item.id} onClick={() => { setSelectedItem(item); setView('details'); }} className="bg-white rounded-[32px] border border-emerald-50 shadow-sm overflow-hidden active:scale-95 transition">
+                                        <img src={item.image || "https://placehold.co/400x500/10b981/ffffff?text=GreenShare"} className="w-full aspect-[3/4] object-cover" />
+                                        <div className="p-3">
+                                            <h3 className="font-bold text-sm text-slate-800 line-clamp-1 leading-tight">{item.title}</h3>
+                                            <p className="text-[9px] text-slate-400 font-black uppercase mt-1">📍 {item.location}</p>
+                                        </div>
+                                    </div>
+                                ))}
+                                {filtered.length === 0 && <p className="col-span-2 text-center py-20 text-slate-300 font-bold">Chưa có quà ở mục này...</p>}
                             </div>
                         </div>
                     )}
 
-                    {view === 'profile' && (
-                        <div className="p-8 animate-in text-center flex flex-col items-center justify-center min-h-[60vh]">
-                            <div className="w-20 h-20 bg-emerald-600 rounded-3xl flex items-center justify-center text-white mb-6 text-3xl shadow-xl">👤</div>
-                            <h2 className="text-2xl font-black text-emerald-900">Chào bạn!</h2>
-                            <p className="text-slate-400 font-bold mt-2 mb-8">Hệ thống đang lưu trữ thành tích của bạn qua tài khoản ẩn danh.</p>
-                            <button onClick={() => setView('explore')} className="px-10 py-4 bg-emerald-600 text-white rounded-2xl font-black shadow-lg">TIẾP TỤC DẠO QUANH</button>
+                    {/* Màn hình Đăng quà (BẢN THỰC) */}
+                    {view === 'create' && (
+                        <div className="p-6 pb-32 animate-in flex-1 overflow-y-auto bg-slate-50">
+                            <div className="flex justify-between items-center mb-8">
+                                <h2 className="text-2xl font-black text-emerald-900">Tặng quà mới</h2>
+                                <button onClick={() => setView('explore')} className="p-2 bg-white rounded-xl"><Icon name="x"/></button>
+                            </div>
+                            <form onSubmit={handleCreateListing} className="space-y-6">
+                                <div onClick={() => fileRef.current.click()} className="h-48 bg-emerald-50 rounded-[40px] border-2 border-dashed border-emerald-200 flex flex-col items-center justify-center text-emerald-400 overflow-hidden">
+                                    {createForm.image ? <img src={createForm.image} className="w-full h-full object-cover" /> : <><Icon name="camera" size={32}/><p className="text-[10px] font-black uppercase mt-2">Bấm để chụp ảnh</p></>}
+                                    <input type="file" ref={fileRef} className="hidden" accept="image/*" onChange={e => {
+                                        const f = e.target.files[0];
+                                        const r = new FileReader();
+                                        r.onload = () => setCreateForm({...createForm, image: r.result});
+                                        r.readAsDataURL(f);
+                                    }} />
+                                </div>
+                                <input required className="w-full p-4 bg-white rounded-2xl font-bold shadow-sm outline-none" placeholder="Tên món quà là gì?..." value={createForm.title} onChange={e => setCreateForm({...createForm, title: e.target.value})} />
+                                <textarea required className="w-full p-4 bg-white rounded-2xl font-bold shadow-sm outline-none min-h-[100px]" placeholder="Mô tả ngắn gọn về tình trạng..." value={createForm.desc} onChange={e => setCreateForm({...createForm, desc: e.target.value})} />
+                                <input required className="w-full p-4 bg-white rounded-2xl font-bold shadow-sm outline-none" placeholder="📍 Bạn ở Quận mấy, Đường nào?..." value={createForm.location} onChange={e => setCreateForm({...createForm, location: e.target.value})} />
+                                
+                                <div className="space-y-3">
+                                    <p className="text-[10px] font-black text-slate-400 uppercase ml-2">Cách bạn trao quà</p>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <button type="button" onClick={() => setCreateForm({...createForm, logistics: 'receiver_pickup'})} className={`p-4 rounded-2xl border-2 font-black text-[10px] ${createForm.logistics === 'receiver_pickup' ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-slate-400'}`}>NGƯỜI NHẬN ĐẾN LẤY</button>
+                                        <button type="button" onClick={() => setCreateForm({...createForm, logistics: 'giver_sends'})} className={`p-4 rounded-2xl border-2 font-black text-[10px] ${createForm.logistics === 'giver_sends' ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-slate-400'}`}>TÔI MANG GỬI SHIP</button>
+                                    </div>
+                                </div>
+
+                                <button type="submit" disabled={isSubmitting} className="w-full py-5 bg-emerald-600 text-white rounded-[24px] font-black shadow-green active:scale-95 transition-all">
+                                    {isSubmitting ? 'ĐANG ĐĂNG TIN...' : 'HOÀN TẤT ĐĂNG QUÀ'}
+                                </button>
+                            </form>
                         </div>
                     )}
 
-                    <nav className="fixed bottom-6 left-6 right-6 h-16 bg-slate-900 rounded-[28px] shadow-2xl flex items-center justify-around z-40 border border-white/10">
-                        <button onClick={() => setView('explore')} className={`p-4 ${view === 'explore' ? 'text-emerald-400' : 'text-slate-500'}`}>🌍</button>
-                        <button onClick={() => alert("Vui lòng dùng bản thực để đăng quà!")} className="w-12 h-12 bg-emerald-500 text-white rounded-2xl shadow-lg -mt-10 border-4 border-white flex items-center justify-center font-bold text-2xl">＋</button>
-                        <button onClick={() => setView('profile')} className={`p-4 ${view === 'profile' ? 'text-emerald-400' : 'text-slate-500'}`}>👤</button>
-                    </nav>
+                    {/* Chi tiết quà tặng */}
+                    {view === 'details' && selectedItem && (
+                        <div className="animate-in pb-32 flex-1">
+                            <div className="relative h-64 bg-emerald-100 overflow-hidden">
+                                <img src={selectedItem.image} className="w-full h-full object-cover" />
+                                <button onClick={() => setView('explore')} className="absolute top-4 left-4 w-10 h-10 bg-white/90 rounded-xl flex items-center justify-center shadow-lg"><Icon name="chevron-left" /></button>
+                            </div>
+                            <div className="p-8 -mt-10 bg-white rounded-t-[48px] shadow-2xl space-y-6">
+                                <div className="flex justify-between items-center">
+                                    <Badge variant={selectedItem.logistics === 'receiver_pickup' ? 'emerald' : 'blue'}>{selectedItem.logistics === 'receiver_pickup' ? '🛵 BẠN ĐẾN LẤY' : '📦 SHIP TẬN NHÀ'}</Badge>
+                                    <span className="text-xs font-black text-emerald-600 italic">🌳 +10 Điểm Xanh</span>
+                                </div>
+                                <h1 className="text-2xl font-black text-slate-800 leading-tight">{selectedItem.title}</h1>
+                                <div className="p-6 bg-slate-50 rounded-[32px] space-y-5 text-sm font-bold text-slate-700 shadow-inner">
+                                    <p className="flex items-center gap-2"><Icon name="map-pin" className="text-emerald-500" size={16}/> 📍 Nơi nhận: {selectedItem.location}</p>
+                                    <p className="flex items-center gap-2"><Icon name="clock" className="text-emerald-500" size={16}/> ⏰ Thời gian rảnh: {selectedItem.pickupTime}</p>
+                                </div>
+                                <p className="text-sm italic text-slate-500 leading-relaxed font-medium">"{selectedItem.desc || selectedItem.description}"</p>
+                            </div>
+                            <div className="fixed bottom-0 left-0 right-0 p-6 bg-white/95 border-t z-50">
+                                <button onClick={() => profile ? alert("Đã gửi yêu cầu!") : setView('register')} className="w-full py-5 bg-emerald-600 text-white rounded-2xl font-black shadow-green animate-pulse">ĐĂNG KÝ NHẬN QUÀ</button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Màn hình cá nhân */}
+                    {view === 'profile' && (
+                        <div className="p-8 bg-slate-50 flex-1 animate-in">
+                            <button onClick={() => setView('explore')} className="mb-8 w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow-sm"><Icon name="chevron-left"/></button>
+                            {profile ? (
+                                <div className="space-y-8 text-center">
+                                    <div className="bg-emerald-600 rounded-[48px] p-10 text-white shadow-xl relative overflow-hidden border-b-8 border-emerald-700">
+                                        <div className="w-20 h-20 bg-white/20 rounded-full mx-auto flex items-center justify-center text-3xl font-black border-4 border-white/50 mb-6">{profile.name[0].toUpperCase()}</div>
+                                        <h3 className="text-2xl font-black tracking-tight leading-none mb-4">{profile.name}</h3>
+                                        <p className="text-[10px] font-black uppercase tracking-widest opacity-80 italic">🌱 Mầm Non Tử Tế</p>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="bg-white p-6 rounded-[32px] text-center shadow-sm"><p className="text-2xl font-black text-slate-800">{profile.heart || 0}</p><p className="text-[9px] font-black uppercase text-slate-400 mt-1 italic">Tử tế ❤️</p></div>
+                                        <div className="bg-white p-6 rounded-[32px] text-center shadow-sm"><p className="text-2xl font-black text-slate-800">{profile.leaf || 0}</p><p className="text-[9px] font-black uppercase text-slate-400 mt-1 italic">Sống Xanh 🌳</p></div>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="text-center py-20 bg-white rounded-[48px] border-2 border-dashed border-emerald-100 flex flex-col items-center gap-6"><p className="text-xl font-black text-slate-400 italic">Chưa có hồ sơ</p><button onClick={() => setView('register')} className="px-10 py-5 bg-emerald-600 text-white rounded-3xl font-black">BẮT ĐẦU NGAY</button></div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* Success View */}
+                    {view === 'success' && (
+                        <div className="fixed inset-0 bg-white flex flex-col items-center justify-center p-10 text-center z-[100]">
+                            <div className="text-6xl mb-6">🎉</div>
+                            <h2 className="text-3xl font-black text-emerald-800">Thành công!</h2>
+                            <p className="text-slate-400 font-bold mt-2">Dữ liệu đã được lưu trữ an toàn.</p>
+                            <button onClick={() => setView('explore')} className="mt-12 px-12 py-4 bg-emerald-600 text-white rounded-3xl font-black">TIẾP TỤC</button>
+                        </div>
+                    )}
+
+                    {/* Màn hình Đăng ký */}
+                    {view === 'register' && (
+                        <div className="p-8 flex flex-col justify-center flex-1 animate-in bg-slate-50">
+                            <h2 className="text-2xl font-black text-emerald-900 mb-8 text-center">Gia nhập cộng đồng</h2>
+                            <form onSubmit={handleRegister} className="space-y-4">
+                                <input required className="w-full bg-white rounded-2xl p-4 font-bold shadow-sm" placeholder="Họ và tên thật..." value={regForm.name} onChange={e => setRegForm({...regForm, name: e.target.value})} />
+                                <input required type="tel" className="w-full bg-white rounded-2xl p-4 font-bold shadow-sm" placeholder="Số điện thoại..." value={regForm.phone} onChange={e => setRegForm({...regForm, phone: e.target.value})} />
+                                <div className="p-5 bg-blue-50 rounded-3xl space-y-3 border border-blue-100 text-[11px] font-bold text-slate-600">
+                                    <label className="flex gap-2"><input type="checkbox" required checked={regForm.agreed} onChange={e => setRegForm({...regForm, agreed: e.target.checked})}/> Tôi cam kết KHÔNG bán lại quà tặng.</label>
+                                    <label className="flex gap-2"><input type="checkbox" required/> Tôi cư xử lịch sự khi giao nhận.</label>
+                                </div>
+                                <button type="submit" disabled={isSubmitting} className="w-full py-5 bg-emerald-600 text-white rounded-2xl font-black shadow-green">XÁC NHẬN & GIA NHẬP</button>
+                            </form>
+                        </div>
+                    )}
+
+                    {/* Thanh Điều Hướng Dưới Cùng */}
+                    {['explore', 'profile', 'create'].includes(view) && (
+                        <nav className="fixed bottom-6 left-6 right-6 h-16 bg-slate-900 rounded-[28px] shadow-2xl flex items-center justify-around z-40 border border-white/10">
+                            <button onClick={() => setView('explore')} className={`p-4 transition-all ${view === 'explore' ? 'text-emerald-400' : 'text-slate-500'}`}><Icon name="globe" /></button>
+                            <button onClick={() => profile ? setView('create') : setView('register')} className="w-12 h-12 bg-emerald-500 text-white rounded-2xl shadow-green -mt-10 border-4 border-white flex items-center justify-center font-black text-2xl active:scale-90 transition">＋</button>
+                            <button onClick={() => setView('profile')} className={`p-4 transition-all ${view === 'profile' ? 'text-emerald-400' : 'text-slate-500'}`}><Icon name="user" /></button>
+                        </nav>
+                    )}
                 </div>
             );
         }
