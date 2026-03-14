@@ -1,172 +1,147 @@
-<script type="text/babel">
-    const { useState, useEffect, useMemo } = React;
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>GreenShare - Trao Tặng Tử Tế</title>
+    
+    <!-- 1. Thư viện giao diện & Font -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- 2. React & Babel (Biên dịch code ngay tại máy người dùng) -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- 3. Firebase (Bản Compat để chạy trực tiếp không cần Build) -->
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
+    
+    <style>
+        body { font-family: 'Plus Jakarta Sans', sans-serif; -webkit-tap-highlight-color: transparent; }
+        .animate-in { animation: slideUp 0.5s ease-out forwards; }
+        @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+    </style>
+</head>
+<body class="bg-slate-50">
+    <div id="root">
+        <!-- Thông báo nếu app chưa tải xong -->
+        <div class="flex items-center justify-center min-h-screen text-emerald-600 font-bold">
+            Đang khởi động GreenShare...
+        </div>
+    </div>
 
-    // --- FIREBASE CONFIG (ĐÃ RÁP SẴN TỪ ẢNH CỦA BẠN) ---
-    const firebaseConfig = {
-        apiKey: "AIzaSyCKazmR3gsDpEc0z9ggeXAbhldLKX4V_Y8",
-        authDomain: "greenshare-app-5223a.firebaseapp.com",
-        projectId: "greenshare-app-5223a",
-        storageBucket: "greenshare-app-5223a.firebasestorage.app",
-        messagingSenderId: "695364858101",
-        appId: "1:695364858101:web:2d8aaee858b9fef79c614b",
-        measurementId: "G-TPVBK90J73"
-    };
+    <script type="text/babel">
+        const { useState, useEffect } = React;
 
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-    import { getFirestore, collection, addDoc, query, onSnapshot, limit, where, doc, setDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-    import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-
-    const fbApp = initializeApp(firebaseConfig);
-    const db = getFirestore(fbApp);
-    const auth = getAuth(fbApp);
-
-    function App() {
-        const [view, setView] = useState('explore');
-        const [user, setUser] = useState(null);
-        const [profile, setProfile] = useState(null);
-        const [listings, setListings] = useState([]);
-        const [selectedItem, setSelectedItem] = useState(null);
-        const [regForm, setRegForm] = useState({ name: '', phone: '', address: '', agreed: false });
-        const [applyForm, setApplyForm] = useState({ message: '', deliveryAddress: '' });
-        const [activeTab, setActiveTab] = useState('new');
-
-        useEffect(() => {
-            signInAnonymously(auth);
-            onAuthStateChanged(auth, (u) => {
-                setUser(u);
-                if (u) {
-                    onSnapshot(doc(db, 'users', u.uid), (sn) => { if (sn.exists()) setProfile(sn.data()); });
-                }
-            });
-            onSnapshot(query(collection(db, 'listings'), limit(20)), (s) => {
-                setListings(s.docs.map(d => ({ id: d.id, ...d.data() })));
-            });
-        }, []);
-
-        const onRegister = async (e) => {
-            e.preventDefault();
-            await setDoc(doc(db, 'users', user.uid), { ...regForm, heart: 10, leaf: 10, createdAt: Date.now() });
-            setView('explore');
+        // --- FIREBASE CONFIG (CỦA RIÊNG BẠN) ---
+        const firebaseConfig = {
+            apiKey: "AIzaSyCKazmR3gsDpEc0z9ggeXAbhldLKX4V_Y8",
+            authDomain: "greenshare-app-5223a.firebaseapp.com",
+            projectId: "greenshare-app-5223a",
+            storageBucket: "greenshare-app-5223a.firebasestorage.app",
+            messagingSenderId: "695364858101",
+            appId: "1:695364858101:web:2d8aaee858b9fef79c614b"
         };
 
-        const onApply = async (e) => {
-            e.preventDefault();
-            await addDoc(collection(db, 'requests'), {
-                listingId: selectedItem.id, requesterId: user.uid, name: profile.name,
-                message: applyForm.message, deliveryAddress: applyForm.deliveryAddress || profile.address,
-                createdAt: Date.now()
-            });
-            await updateDoc(doc(db, 'listings', selectedItem.id), { requestCount: (selectedItem.requestCount || 0) + 1 });
-            setView('success');
-        };
+        // Khởi tạo
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+        const auth = firebase.auth();
 
-        return (
-            <div className="max-w-md mx-auto min-h-screen bg-white shadow-2xl flex flex-col">
-                <header className="p-5 border-b flex justify-between items-center sticky top-0 bg-white z-50 shadow-sm">
-                    <div className="flex items-center gap-2">
-                        <div className="w-10 h-10 bg-emerald-600 rounded-2xl flex items-center justify-center text-white font-black text-xl italic">G</div>
-                        <h1 className="text-xl font-black text-emerald-900">GreenShare</h1>
-                    </div>
-                    <button onClick={() => setView('profile')} className="w-10 h-10 bg-emerald-50 rounded-full flex items-center justify-center">
-                        {profile ? <span className="text-xs font-black">{profile.heart}❤️</span> : "👤"}
-                    </button>
-                </header>
+        function App() {
+            const [view, setView] = useState('explore');
+            const [user, setUser] = useState(null);
+            const [profile, setProfile] = useState(null);
+            const [listings, setListings] = useState([]);
+            const [selectedItem, setSelectedItem] = useState(null);
 
-                {view === 'explore' && (
-                    <div className="p-5 pb-32 animate-in">
-                        <div className="flex gap-2 overflow-x-auto no-scrollbar mb-6">
-                            {['new', 'done', 'all'].map(t => (
-                                <button key={t} onClick={() => setActiveTab(t)} className={`px-5 py-2 rounded-full text-[11px] font-black whitespace-nowrap ${activeTab === t ? 'bg-emerald-600 text-white shadow-lg' : 'bg-slate-100 text-slate-400'}`}>
-                                    {t === 'new' ? 'Còn suất' : t === 'done' ? 'Đã trao' : 'Tất cả'}
-                                </button>
-                            ))}
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                            {listings.map(item => (
-                                <div key={item.id} onClick={() => { setSelectedItem(item); setView('details'); }} className="bg-white rounded-3xl border border-emerald-50 shadow-sm overflow-hidden active:scale-95 transition">
-                                    <img src={item.image || "https://placehold.co/400x500/10b981/ffffff?text=GreenShare"} className="w-full aspect-square object-cover" />
-                                    <div className="p-3">
-                                        <h3 className="font-bold text-sm text-slate-800 line-clamp-1">{item.title}</h3>
-                                        <p className="text-[10px] text-slate-400 font-black uppercase mt-1">📍 {item.location || "HCM"}</p>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                )}
+            useEffect(() => {
+                auth.signInAnonymously();
+                auth.onAuthStateChanged((u) => {
+                    setUser(u);
+                    if (u) {
+                        db.collection('users').doc(u.uid).onSnapshot(sn => {
+                            if (sn.exists) setProfile(sn.data());
+                        });
+                    }
+                });
+                db.collection('listings').limit(20).onSnapshot(s => {
+                    setListings(s.docs.map(d => ({ id: d.id, ...d.data() })));
+                });
+            }, []);
 
-                {view === 'details' && selectedItem && (
-                    <div className="animate-in pb-32">
-                        <div className="relative h-64"><img src={selectedItem.image} className="w-full h-full object-cover" /><button onClick={() => setView('explore')} className="absolute top-4 left-4 p-2 bg-white rounded-xl shadow-lg">⬅️ Quay lại</button></div>
-                        <div className="p-8 -mt-10 bg-white rounded-t-[48px] shadow-2xl space-y-6">
-                            <h1 className="text-2xl font-black text-slate-800 leading-tight">{selectedItem.title}</h1>
-                            <div className="p-6 bg-slate-50 rounded-[40px] space-y-5 text-sm font-bold text-slate-700 shadow-inner">
-                                <p>📍 Nơi nhận quà: {selectedItem.location}</p>
-                                <p className="border-t pt-4">⏰ Thời gian rảnh: {selectedItem.pickupTime}</p>
-                                {selectedItem.logistics === 'giver_sends' && <p className="border-t pt-4 text-blue-600">🚚 Phí ship: {selectedItem.shipPolicy === 'giver_pays' ? '🎁 MIỄN PHÍ' : '⚠️ BẠN TRẢ COD'}</p>}
-                            </div>
-                            <p className="text-sm italic text-slate-500">"{selectedItem.description}"</p>
-                            <button onClick={() => profile ? setView('apply') : setView('register')} className="w-full py-5 bg-emerald-600 text-white rounded-2xl font-black shadow-xl active:scale-95 transition-all">ĐĂNG KÝ NHẬN QUÀ</button>
-                        </div>
-                    </div>
-                )}
-
-                {view === 'register' && (
-                    <div className="p-8 flex flex-col justify-center flex-1 animate-in">
-                        <h2 className="text-2xl font-black text-emerald-900 mb-6 text-center">Tham gia cộng đồng</h2>
-                        <form onSubmit={onRegister} className="space-y-4">
-                            <input required className="w-full bg-slate-100 rounded-2xl p-4 font-bold" placeholder="Họ và tên thật..." value={regForm.name} onChange={e => setRegForm({...regForm, name: e.target.value})} />
-                            <input required type="tel" className="w-full bg-slate-100 rounded-2xl p-4 font-bold" placeholder="Số điện thoại..." value={regForm.phone} onChange={e => setRegForm({...regForm, phone: e.target.value})} />
-                            <div className="p-4 bg-blue-50 rounded-2xl text-[11px] font-bold text-slate-600 space-y-2">
-                                <label className="flex gap-2"><input type="checkbox" required checked={regForm.agreed} onChange={e => setRegForm({...regForm, agreed: e.target.checked})}/> Tôi cam kết không bán lại quà tặng.</label>
-                                <label className="flex gap-2"><input type="checkbox" required/> Tôi cư xử lịch sự khi giao nhận.</label>
-                            </div>
-                            <button type="submit" className="w-full py-5 bg-emerald-600 text-white rounded-2xl font-black shadow-xl">XÁC NHẬN & THAM GIA</button>
-                        </form>
-                    </div>
-                )}
-
-                {view === 'success' && (
-                    <div className="fixed inset-0 bg-white flex flex-col items-center justify-center p-10 text-center z-50">
-                        <div className="text-6xl mb-6">🎉</div>
-                        <h2 className="text-3xl font-black text-emerald-800">Thành công!</h2>
-                        <p className="text-slate-400 font-bold mt-2">Đã gửi yêu cầu của bạn.</p>
-                        <button onClick={() => setView('explore')} className="mt-12 px-12 py-4 bg-emerald-600 text-white rounded-3xl font-black">QUAY LẠI</button>
-                    </div>
-                )}
-
-                {view === 'profile' && (
-                    <div className="p-8 bg-slate-50 flex-1 animate-in">
-                        <button onClick={() => setView('explore')} className="mb-8 font-bold">⬅️ Quay lại</button>
-                        {profile ? (
-                            <div className="space-y-8">
-                                <div className="bg-emerald-600 rounded-[48px] p-10 text-white text-center shadow-xl">
-                                    <div className="w-20 h-20 bg-white/20 rounded-full mx-auto flex items-center justify-center text-3xl font-black border-4 border-white/50 mb-6">{profile.name[0]}</div>
-                                    <h3 className="text-2xl font-black">{profile.name}</h3>
-                                    <p className="mt-4 text-xs font-bold uppercase tracking-widest opacity-80">🌱 Mầm Non Tử Tế</p>
-                                </div>
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div className="bg-white p-6 rounded-3xl text-center"><p className="text-2xl font-black">{profile.heart || 0}</p><p className="text-[9px] font-black uppercase text-slate-400">Tử tế ❤️</p></div>
-                                    <div className="bg-white p-6 rounded-3xl text-center"><p className="text-2xl font-black">{profile.leaf || 0}</p><p className="text-[9px] font-black uppercase text-slate-400">Sống Xanh 🌳</p></div>
+            const renderExplore = () => (
+                <div className="p-5 animate-in">
+                    <div className="grid grid-cols-2 gap-4">
+                        {listings.map(item => (
+                            <div key={item.id} onClick={() => { setSelectedItem(item); setView('details'); }} className="bg-white rounded-3xl overflow-hidden shadow-sm border border-emerald-50 active:scale-95 transition">
+                                <img src={item.image || "https://placehold.co/400x400/10b981/ffffff?text=Qua+Tang"} className="w-full aspect-square object-cover" />
+                                <div className="p-3">
+                                    <h3 className="font-bold text-sm text-slate-800 line-clamp-1">{item.title}</h3>
+                                    <p className="text-[10px] text-slate-400 font-bold mt-1 uppercase">📍 {item.location}</p>
                                 </div>
                             </div>
-                        ) : (
-                            <button onClick={() => setView('register')} className="w-full py-5 bg-emerald-600 text-white rounded-2xl font-black">ĐĂNG KÝ THÀNH VIÊN</button>
-                        )}
+                        ))}
+                        {listings.length === 0 && <p className="col-span-2 text-center py-20 text-slate-400">Đang tìm quà tặng xung quanh bạn...</p>}
                     </div>
-                )}
+                </div>
+            );
 
-                {['explore', 'profile'].includes(view) && (
+            return (
+                <div className="max-w-md mx-auto min-h-screen bg-white pb-24 shadow-2xl relative">
+                    <header className="p-5 border-b flex justify-between items-center sticky top-0 bg-white/90 backdrop-blur z-50">
+                        <div className="flex items-center gap-2">
+                            <div className="w-10 h-10 bg-emerald-600 rounded-xl flex items-center justify-center text-white font-black text-xl italic shadow-lg">G</div>
+                            <h1 className="text-xl font-black text-emerald-900 tracking-tight">GreenShare</h1>
+                        </div>
+                        <button onClick={() => setView('profile')} className="w-10 h-10 bg-emerald-50 rounded-full flex items-center justify-center text-emerald-600 border border-emerald-100">
+                           {profile ? profile.heart + "❤️" : "👤"}
+                        </button>
+                    </header>
+
+                    {view === 'explore' && renderExplore()}
+                    
+                    {view === 'details' && selectedItem && (
+                        <div className="animate-in">
+                            <img src={selectedItem.image} className="w-full h-64 object-cover" />
+                            <div className="p-8 -mt-10 bg-white rounded-t-[48px] shadow-2xl space-y-6">
+                                <button onClick={() => setView('explore')} className="text-emerald-600 font-bold mb-2 flex items-center gap-1">← Quay lại</button>
+                                <h1 className="text-2xl font-black text-slate-800">{selectedItem.title}</h1>
+                                <div className="p-6 bg-slate-50 rounded-[32px] space-y-4 text-sm font-bold text-slate-600">
+                                    <p>📍 Nơi nhận: {selectedItem.location}</p>
+                                    <p>⏰ Thời gian: {selectedItem.pickupTime}</p>
+                                </div>
+                                <p className="italic text-slate-500">"{selectedItem.description}"</p>
+                                <button onClick={() => alert("Chức năng đang chờ kích hoạt bản chính thức!")} className="w-full py-5 bg-emerald-600 text-white rounded-2xl font-black shadow-xl">ĐĂNG KÝ NHẬN QUÀ</button>
+                            </div>
+                        </div>
+                    )}
+
+                    {view === 'profile' && (
+                        <div className="p-8 animate-in text-center flex flex-col items-center justify-center min-h-[60vh]">
+                            <div className="w-20 h-20 bg-emerald-600 rounded-3xl flex items-center justify-center text-white mb-6 text-3xl shadow-xl">👤</div>
+                            <h2 className="text-2xl font-black text-emerald-900">Chào bạn!</h2>
+                            <p className="text-slate-400 font-bold mt-2 mb-8">Hệ thống đang lưu trữ thành tích của bạn qua tài khoản ẩn danh.</p>
+                            <button onClick={() => setView('explore')} className="px-10 py-4 bg-emerald-600 text-white rounded-2xl font-black shadow-lg">TIẾP TỤC DẠO QUANH</button>
+                        </div>
+                    )}
+
                     <nav className="fixed bottom-6 left-6 right-6 h-16 bg-slate-900 rounded-[28px] shadow-2xl flex items-center justify-around z-40 border border-white/10">
-                        <button onClick={() => setView('explore')} className="p-4">🌍</button>
-                        <button onClick={() => profile ? alert("Dùng bản chính thức để đăng quà nhé!") : setView('register')} className="w-12 h-12 bg-emerald-500 text-white rounded-2xl shadow-lg -mt-10 border-4 border-white flex items-center justify-center font-bold">＋</button>
-                        <button onClick={() => setView('profile')} className="p-4">👤</button>
+                        <button onClick={() => setView('explore')} className={`p-4 ${view === 'explore' ? 'text-emerald-400' : 'text-slate-500'}`}>🌍</button>
+                        <button onClick={() => alert("Vui lòng dùng bản thực để đăng quà!")} className="w-12 h-12 bg-emerald-500 text-white rounded-2xl shadow-lg -mt-10 border-4 border-white flex items-center justify-center font-bold text-2xl">＋</button>
+                        <button onClick={() => setView('profile')} className={`p-4 ${view === 'profile' ? 'text-emerald-400' : 'text-slate-500'}`}>👤</button>
                     </nav>
-                )}
-            </div>
-        );
-    }
+                </div>
+            );
+        }
 
-    const root = ReactDOM.createRoot(document.getElementById('root'));
-    root.render(<App />);
-</script>
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
+
